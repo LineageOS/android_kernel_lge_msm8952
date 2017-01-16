@@ -30,6 +30,17 @@ struct mdss_livedisplay_ctx {
 	uint8_t sre_medium_value;
 	uint8_t sre_strong_value;
 	uint8_t aco_value;
+	uint8_t reader_mode_value;
+	uint8_t reader_mode_initial_step1_value;
+	uint8_t reader_mode_initial_step2_value;
+	uint8_t reader_mode_initial_step3_value;
+	uint8_t reader_mode_step1_value;
+	uint8_t reader_mode_step2_value;
+	uint8_t reader_mode_step3_value;
+	uint8_t reader_mode_mono_enable_value;
+	uint8_t reader_mode_mono_disable_value;
+	uint8_t reader_mode_off_value;
+	uint8_t reader_mode_mono_off_value;
 
 	const uint8_t *ce_off_cmds;
 	const uint8_t *ce_on_cmds;
@@ -50,6 +61,7 @@ struct mdss_livedisplay_ctx {
 	unsigned int sre_level;
 	bool aco_enabled;
 	bool ce_enabled;
+	unsigned int reader_level;
 
 	unsigned int num_presets;
 	unsigned int caps;
@@ -77,11 +89,20 @@ enum {
 };
 
 enum {
+	READER_OFF,
+	READER_1,
+	READER_2,
+	READER_3,
+	READER_MONO
+};
+
+enum {
 	MODE_CABC		= 0x01,
 	MODE_SRE		= 0x02,
 	MODE_AUTO_CONTRAST	= 0x04,
 	MODE_COLOR_ENHANCE	= 0x08,
 	MODE_PRESET		= 0x10,
+	MODE_READER		= 0x12,
 	MODE_UPDATE_ALL		= 0xFF,
 };
 

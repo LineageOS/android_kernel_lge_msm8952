@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015 The CyanogenMod Project
+ * Copyright (c) 2017 The LineageOS Project
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -46,6 +47,9 @@
  *
  * color_enhance: Hardware color enhancement. Must be configured
  *      in the panel devicetree. Boolean.
+ *
+ * reader_mode: Gamma calibration and monochromatic mode for
+ *      easier long term reading. Up to 4 levels
  */
 
 extern void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
@@ -218,11 +222,22 @@ static int mdss_livedisplay_update_locked(struct mdss_dsi_ctrl_pdata *ctrl_pdata
 		if (mlc->aco_enabled)
 			cabc_value |= mlc->aco_value;
 
+		if (mlc->reader_level == READER_OFF)
+			cabc_value |= mlc->reader_mode_off_value;
+		else if (mlc->reader_level == READER_1)
+			cabc_value |= mlc->reader_mode_step1_value;
+		else if (mlc->reader_level == READER_2)
+			cabc_value |= mlc->reader_mode_step2_value;
+		else if (mlc->reader_level == READER_3)
+			cabc_value |= mlc->reader_mode_step3_value;
+		else if (mlc->reader_level == READER_MONO)
+			cabc_value |= mlc->reader_mode_mono_enable_value;
+
 		len += mlc->cabc_cmds_len;
 
-		pr_info("%s cabc=%d sre=%d aco=%d cmd=%d\n", __func__,
+		pr_info("%s cabc=%d sre=%d aco=%d cmd=%d reader=%d\n", __func__,
 				mlc->cabc_level, mlc->sre_level, mlc->aco_enabled,
-				cabc_value);
+				cabc_value, mlc->reader_level);
 	}
 
 	len += mlc->post_cmds_len;
@@ -542,12 +557,46 @@ static ssize_t mdss_livedisplay_set_rgb(struct device *dev,
 	return ret;
 }
 
+static ssize_t mdss_livedisplay_get_reader_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	struct mdss_livedisplay_ctx *mlc = get_ctx(mfd);
+
+	return sprintf(buf, "%d\n", mlc->reader_level);
+}
+
+static ssize_t mdss_livedisplay_set_reader_mode(struct device *dev,
+							   struct device_attribute *attr,
+							   const char *buf, size_t count)
+{
+	int level = 0;
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	struct mdss_livedisplay_ctx *mlc = get_ctx(mfd);
+
+	mutex_lock(&mlc->lock);
+
+	sscanf(buf, "%du", &level);
+	if (level >= READER_OFF && level < READER_MONO &&
+				level != mlc->reader_level) {
+		mlc->reader_level = level;
+		mdss_livedisplay_update_locked(get_ctrl(mfd), MODE_READER);
+	}
+
+	mutex_unlock(&mlc->lock);
+
+	return count;
+}
+
 static DEVICE_ATTR(cabc, S_IRUGO | S_IWUSR | S_IWGRP, mdss_livedisplay_get_cabc, mdss_livedisplay_set_cabc);
 static DEVICE_ATTR(sre, S_IRUGO | S_IWUSR | S_IWGRP, mdss_livedisplay_get_sre, mdss_livedisplay_set_sre);
 static DEVICE_ATTR(color_enhance, S_IRUGO | S_IWUSR | S_IWGRP, mdss_livedisplay_get_color_enhance, mdss_livedisplay_set_color_enhance);
 static DEVICE_ATTR(aco, S_IRUGO | S_IWUSR | S_IWGRP, mdss_livedisplay_get_aco, mdss_livedisplay_set_aco);
 static DEVICE_ATTR(preset, S_IRUGO | S_IWUSR | S_IWGRP, mdss_livedisplay_get_preset, mdss_livedisplay_set_preset);
 static DEVICE_ATTR(num_presets, S_IRUGO, mdss_livedisplay_get_num_presets, NULL);
+static DEVICE_ATTR(reader_mode, S_IRUGO | S_IWUSR | S_IWGRP, mdss_livedisplay_get_reader_mode, mdss_livedisplay_set_reader_mode);
 static DEVICE_ATTR(rgb, S_IRUGO | S_IWUSR | S_IWGRP, mdss_livedisplay_get_rgb, mdss_livedisplay_set_rgb);
 
 int mdss_livedisplay_parse_dt(struct device_node *np, struct mdss_panel_info *pinfo)
@@ -589,6 +638,29 @@ int mdss_livedisplay_parse_dt(struct device_node *np, struct mdss_panel_info *pi
 		if (rc == 0) {
 			mlc->caps |= MODE_AUTO_CONTRAST;
 			mlc->aco_value = (uint8_t)(tmp & 0xFF);
+		}
+		rc = of_property_read_u32(np, "qcom,panel-reader-mode-initial-step1-command", &tmp);
+		if (rc == 0) {
+			mlc->caps |= MODE_READER;
+			mlc->reader_mode_initial_step1_value = (uint8_t)(tmp & 0xFF);
+			of_property_read_u32(np, "qcom,panel-reader-mode-initial-step2-command", &tmp);
+			mlc->reader_mode_initial_step2_value = (uint8_t)(tmp & 0xFF);
+			of_property_read_u32(np, "qcom,panel-reader-mode-initial-step3-command", &tmp);
+			mlc->reader_mode_initial_step3_value = (uint8_t)(tmp & 0xFF);
+			of_property_read_u32(np, "qcom,panel-reader-mode-step1-command", &tmp);
+			mlc->reader_mode_step1_value = (uint8_t)(tmp & 0xFF);
+			of_property_read_u32(np, "qcom,panel-reader-mode-step2-command", &tmp);
+			mlc->reader_mode_step3_value = (uint8_t)(tmp & 0xFF);
+			of_property_read_u32(np, "qcom,panel-reader-mode-step3-command", &tmp);
+			mlc->reader_mode_step3_value = (uint8_t)(tmp & 0xFF);
+			of_property_read_u32(np, "qcom,panel-reader-mode-mono-enable-command", &tmp);
+			mlc->reader_mode_mono_enable_value = (uint8_t)(tmp & 0xFF);
+			of_property_read_u32(np, "qcom,panel-reader-mode-mono-disable-command", &tmp);
+			mlc->reader_mode_mono_disable_value = (uint8_t)(tmp & 0xFF);
+			of_property_read_u32(np, "qcom,panel-reader-mode-off-command", &tmp);
+			mlc->reader_mode_off_value = (uint8_t)(tmp & 0xFF);
+			of_property_read_u32(np, "qcom,panel-reader-mode-mono-off-command", &tmp);
+			mlc->reader_mode_mono_off_value = (uint8_t)(tmp & 0xFF);
 		}
 	}
 
@@ -667,6 +739,12 @@ int mdss_livedisplay_create_sysfs(struct msm_fb_data_type *mfd)
 			goto sysfs_err;
 	}
 
+	if (mlc->caps & MODE_READER) {
+		rc = sysfs_create_file(&mfd->fbi->dev->kobj, &dev_attr_reader_mode.attr);
+		if (rc)
+			goto sysfs_err;
+	}
+
 	mlc->mfd = mfd;
 
 	return rc;
@@ -675,4 +753,3 @@ sysfs_err:
 	pr_err("%s: sysfs creation failed, rc=%d", __func__, rc);
 	return rc;
 }
-
