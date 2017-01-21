@@ -4,6 +4,14 @@
 
 menu "Misc devices"
 
+config SPI_IR
+	tristate "SPI Ir Remote Control"
+	depends on SPI_MASTER
+
+config SPI_IR_LEARN
+	tristate "SPI Ir Remote Control Learn"
+	depends on SPI_MASTER
+
 config SENSORS_LIS3LV02D
 	tristate
 	depends on INPUT
